@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'gayatrinikam9999@gmail.com' ||
+        request.auth.token.email == 'gayatrinikam9999@gmail' ||
+        (request.auth.token.keys().contains('email') && (
+          request.auth.token.email == 'gayatrinikam9999@gmail.com' ||
+          request.auth.token.email == 'gayatrinikam9999@gmail'
+        ))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // User profile validation
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email'])
+        && data.keys().size() <= 7
+        && data.uid is string && data.uid.size() <= 128
+        && data.email is string && data.email.size() <= 256;
+    }
+
+    // Appointment Booking validation
+    function isValidBooking(data) {
+      return data.keys().hasAll([
+          'id', 'patientName', 'patientEmail', 'patientPhone', 'doctorId', 
+          'doctorName', 'departmentId', 'departmentName', 'date', 
+          'timeSlot', 'reason', 'status', 'createdAt', 'userId'
+        ])
+        && data.keys().size() <= 15
+        && data.id is string && data.id.size() <= 128
+        && data.patientName is string && data.patientName.size() <= 256
+        && data.patientEmail is string && data.patientEmail.size() <= 256
+        && data.patientPhone is string && data.patientPhone.size() <= 64
+        && data.doctorId is string && data.doctorId.size() <= 128
+        && data.doctorName is string && data.doctorName.size() <= 256
+        && data.departmentId is string && data.departmentId.size() <= 128
+        && data.departmentName is string && data.departmentName.size() <= 256
+        && data.date is string && data.date.size() <= 128
+        && data.timeSlot is string && data.timeSlot.size() <= 128
+        && data.reason is string && data.reason.size() <= 4096
+        && data.status in ['confirmed', 'cancelled', 'completed']
+        && data.createdAt is string && data.createdAt.size() <= 128
+        && (data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    // Bookings Collection
+    match /bookings/{bookingId} {
+      allow get: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if (isSignedIn() 
+        && isValidBooking(request.resource.data) 
+        && (request.resource.data.userId == request.auth.uid || isAdmin()));
+      allow update: if (isSignedIn()
+        && isValidBooking(request.resource.data)
+        && (resource.data.userId == request.auth.uid || isAdmin())
+        && (request.resource.data.userId == request.auth.uid || isAdmin()));
+      allow delete: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin();
+    }
+  }
+}
